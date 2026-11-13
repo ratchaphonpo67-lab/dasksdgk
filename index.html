@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Classroom — IoT Environmental Monitor</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Prompt', 'Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Chart.js for Visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- PapaParse for Robust CSV Parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <!-- Google Fonts: Prompt & Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body {
+            font-family: 'Prompt', 'Inter', sans-serif;
+            transition: background-color 0.35s ease, color 0.35s ease;
+        }
+        /* Subtle mesh gradient backdrop */
+        .bg-mesh-light {
+            background-color: #f1f5f9;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.08) 0px, transparent 50%),
+                radial-gradient(at 100% 0%, rgba(14, 165, 233, 0.08) 0px, transparent 50%);
+        }
+        .dark .bg-mesh-dark {
+            background-color: #090d16;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.09) 0px, transparent 45%),
+                radial-gradient(at 100% 0%, rgba(56, 189, 248, 0.08) 0px, transparent 45%);
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 9999px;
+        }
+        .dark ::-webkit-scrollbar-thumb {
+            background: #334155;
+        }
+    </style>
+</head>
+<body class="bg-mesh-light dark:bg-mesh-dark text-slate-800 dark:text-slate-100 antialiased min-h-screen flex flex-col">
+
+    <!-- Floating Top Pill Navigation -->
+    <header class="sticky top-0 z-30 pt-2 sm:pt-3 px-3 sm:px-6 lg:px-8">
+        <div class="max-w-7xl mx-auto bg-white/85 dark:bg-slate-900/85 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800/80 rounded-2xl px-3.5 sm:px-6 py-2.5 sm:py-0 sm:h-16 flex items-center justify-between gap-2 sm:gap-4 shadow-sm">
+            <div class="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+                <div class="relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 shrink-0 rounded-xl bg-gradient-to-tr from-teal-500 to-emerald-400 text-white shadow-md shadow-teal-500/20">
+                    <i data-lucide="cpu" class="w-4 h-4 sm:w-5 sm:h-5"></i>
+                </div>
+                <div class="min-w-0">
+                    <div class="flex items-center gap-1.5 sm:gap-2">
+                        <h1 class="text-sm sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white truncate">Smart Classroom IoT</h1>
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 shrink-0">
+                            <span class="w-1.5 h-1.5 rounded-full bg-teal-500 animate-ping"></span>
+                            <span class="hidden xs:inline">LIVE</span>
+                        </span>
+                    </div>
+                    <p class="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate">ระบบตรวจวัดสภาพแวดล้อมในห้องเรียน</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                <!-- Day / Night Mode Toggle -->
+                <button onclick="toggleTheme()" class="flex items-center justify-center gap-1.5 min-w-[40px] min-h-[40px] px-2.5 sm:px-3 py-2 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 bg-slate-100/80 dark:bg-slate-800/80 hover:bg-slate-200/80 dark:hover:bg-slate-700 rounded-xl transition-all active:scale-95" title="สลับโหมดกลางวัน/กลางคืน">
+                    <i data-lucide="moon" id="themeIcon" class="w-4 h-4 text-slate-600 dark:text-amber-400"></i>
+                    <span id="themeText" class="hidden md:inline">โหมดกลางคืน</span>
+                </button>
+
+                <!-- Sheet Settings -->
+                <button onclick="openConfigModal()" class="flex items-center justify-center min-w-[40px] min-h-[40px] p-2.5 text-slate-600 dark:text-slate-300 bg-slate-100/80 dark:bg-slate-800/80 hover:bg-slate-200/80 dark:hover:bg-slate-700 rounded-xl transition-all active:scale-95" title="ตั้งค่า Google Sheet">
+                    <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
+                </button>
+
+                <!-- Sync Now -->
+                <button onclick="fetchSheetData()" class="flex items-center justify-center gap-1.5 min-h-[40px] px-3 sm:px-3.5 py-2 text-xs sm:text-sm font-medium text-white bg-slate-900 dark:bg-teal-600 hover:bg-slate-800 dark:hover:bg-teal-500 rounded-xl shadow-sm transition-all active:scale-95">
+                    <i data-lucide="refresh-cw" class="w-3.5 h-3.5" id="refreshIcon"></i>
+                    <span class="hidden sm:inline">อัปเดต</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-grow max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6 overflow-x-hidden">
+
+        <!-- Status / Alert Banner -->
+        <div id="statusBanner" class="hidden rounded-2xl p-4 border shadow-sm transition-all"></div>
+
+        <!-- Loading Skeleton -->
+        <div id="loadingState" class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div class="lg:col-span-4 space-y-4">
+                <div class="h-36 bg-white/70 dark:bg-slate-900/70 rounded-3xl border border-slate-200/60 dark:border-slate-800 animate-pulse"></div>
+                <div class="h-36 bg-white/70 dark:bg-slate-900/70 rounded-3xl border border-slate-200/60 dark:border-slate-800 animate-pulse"></div>
+                <div class="h-36 bg-white/70 dark:bg-slate-900/70 rounded-3xl border border-slate-200/60 dark:border-slate-800 animate-pulse"></div>
+            </div>
+            <div class="lg:col-span-8 h-[464px] bg-white/70 dark:bg-slate-900/70 rounded-3xl border border-slate-200/60 dark:border-slate-800 animate-pulse"></div>
+        </div>
+
+        <!-- Dashboard Content -->
+        <div id="dashboardContent" class="hidden space-y-6">
+
+            <!-- Asymmetric Bento Grid: Left Vertical Sensor Stack + Right Wide Dual-Axis Chart -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-stretch">
+                
+                <!-- Left Column (4 cols): Vertical Sensor Stack + Comfort Index -->
+                <div class="lg:col-span-4 grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 gap-3 sm:gap-4">
+                    
+                    <!-- Sensor 1: Temperature -->
+                    <div class="group relative overflow-hidden bg-white dark:bg-slate-900/90 rounded-2xl sm:rounded-3xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 shadow-sm hover:border-rose-300 dark:hover:border-rose-500/40 transition-all">
+                        <div class="flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-2.5 sm:gap-3">
+                                <div class="w-10 h-10 sm:w-11 sm:h-11 shrink-0 rounded-xl sm:rounded-2xl bg-rose-500/10 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+                                    <i data-lucide="thermometer" class="w-5 h-5 sm:w-6 sm:h-6"></i>
+                                </div>
+                                <div>
+                                    <p class="text-[11px] sm:text-xs font-medium text-slate-500 dark:text-slate-400">อุณหภูมิห้องเรียน</p>
+                                    <div class="flex items-baseline gap-1 mt-0.5">
+                                        <span id="valTemp" class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">--.-</span>
+                                        <span class="text-xs sm:text-sm font-semibold text-rose-500">°C</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="text-right shrink-0">
+                                <span id="badgeTemp" class="inline-block px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[10px] sm:text-[11px] font-semibold bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-300">ปกติ</span>
+                                <p id="rangeTemp" class="text-[10px] sm:text-[11px] text-slate-400 mt-1 sm:mt-1.5">Min -- / Max --</p>
+                            </div>
+                        </div>
+                        <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full mt-3 sm:mt-4 overflow-hidden">
+                            <div id="barTemp" class="h-full bg-gradient-to-r from-amber-400 to-rose-500 rounded-full transition-all duration-500" style="width: 60%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Sensor 2: Humidity -->
+                    <div class="group relative overflow-hidden bg-white dark:bg-slate-900/90 rounded-2xl sm:rounded-3xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 shadow-sm hover:border-sky-300 dark:hover:border-sky-500/40 transition-all">
+                        <div class="flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-2.5 sm:gap-3">
+                                <div class="w-10 h-10 sm:w-11 sm:h-11 shrink-0 rounded-xl sm:rounded-2xl bg-sky-500/10 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400 flex items-center justify-center">
+                                    <i data-lucide="droplets" class="w-5 h-5 sm:w-6 sm:h-6"></i>
+                                </div>
+                                <div>
+                                    <p class="text-[11px] sm:text-xs font-medium text-slate-500 dark:text-slate-400">ความชื้นสัมพัทธ์</p>
+                                    <div class="flex items-baseline gap-1 mt-0.5">
+                                        <span id="valHumid" class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">--.-</span>
+                                        <span class="text-xs sm:text-sm font-semibold text-sky-500">%</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="text-right shrink-0">
+                                <span id="badgeHumid" class="inline-block px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[10px] sm:text-[11px] font-semibold bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-300">เหมาะสม</span>
+                                <p id="rangeHumid" class="text-[10px] sm:text-[11px] text-slate-400 mt-1 sm:mt-1.5">Min -- / Max --</p>
+                            </div>
+                        </div>
+                        <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full mt-3 sm:mt-4 overflow-hidden">
+                            <div id="barHumid" class="h-full bg-gradient-to-r from-cyan-400 to-sky-500 rounded-full transition-all duration-500" style="width: 75%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Sensor 3: Heat Index (Feels Like) -->
+                    <div class="group relative overflow-hidden bg-white dark:bg-slate-900/90 rounded-2xl sm:rounded-3xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 shadow-sm hover:border-amber-300 dark:hover:border-amber-500/40 transition-all">
+                        <div class="flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-2.5 sm:gap-3">
+                                <div class="w-10 h-10 sm:w-11 sm:h-11 shrink-0 rounded-xl sm:rounded-2xl bg-amber-500/10 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                                    <i data-lucide="sun" class="w-5 h-5 sm:w-6 sm:h-6"></i>
+                                </div>
+                                <div>
+                                    <p class="text-[11px] sm:text-xs font-medium text-slate-500 dark:text-slate-400">ดัชนีความร้อน</p>
+                                    <div class="flex items-baseline gap-1 mt-0.5">
+                                        <span id="valHeat" class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">--</span>
+                                        <span class="text-xs sm:text-sm font-semibold text-amber-500">°C</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="text-right shrink-0">
+                                <span id="badgeHeat" class="inline-block px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[10px] sm:text-[11px] font-semibold bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-300">สบายตัว</span>
+                                <p id="lastSyncTime" class="text-[10px] sm:text-[11px] text-slate-400 mt-1 sm:mt-1.5 flex items-center justify-end gap-1">
+                                    <i data-lucide="clock" class="w-3 h-3"></i> --:--
+                                </p>
+                            </div>
+                        </div>
+                        <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full mt-3 sm:mt-4 overflow-hidden">
+                            <div id="barHeat" class="h-full bg-gradient-to-r from-emerald-400 via-amber-400 to-orange-500 rounded-full transition-all duration-500" style="width: 65%"></div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Right Column (8 cols): Dual-Axis Telemetry Chart -->
+                <div class="lg:col-span-8 bg-white dark:bg-slate-900/90 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 sm:mb-4">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-full bg-teal-500"></span>
+                                <h2 id="chartTitleText" class="text-sm sm:text-lg font-bold text-slate-900 dark:text-white">แนวโน้มสภาพอากาศ — วันนี้</h2>
+                            </div>
+                            <p id="chartSubText" class="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">แสดงข้อมูลทั้งหมดของวันนั้น ๆ (เรียงล่าสุดอยู่บนสุด)</p>
+                        </div>
+
+                        <!-- Chart Window Selector -->
+                        <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                            <!-- 3-Day Lookback Selector (Isolated per day) -->
+                            <div id="dayFilterGroup" class="grid grid-cols-4 sm:inline-flex w-full sm:w-auto rounded-xl bg-slate-100 dark:bg-slate-800 p-1 text-[11px] sm:text-xs font-medium">
+                                <button onclick="setDayOffset(0)" id="btnDay0" class="px-2 sm:px-2.5 py-1.5 sm:py-1 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm transition-all text-center truncate">วันนี้</button>
+                                <button onclick="setDayOffset(1)" id="btnDay1" class="px-2 sm:px-2.5 py-1.5 sm:py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all text-center truncate">เมื่อวาน</button>
+                                <button onclick="setDayOffset(2)" id="btnDay2" class="px-2 sm:px-2.5 py-1.5 sm:py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all text-center truncate">2 วันก่อน</button>
+                                <button onclick="setDayOffset(3)" id="btnDay3" class="px-2 sm:px-2.5 py-1.5 sm:py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all text-center truncate">3 วันก่อน</button>
+                            </div>
+
+                            <!-- Point Limit Selector -->
+                            <div class="grid grid-cols-3 sm:inline-flex w-full sm:w-auto rounded-xl bg-slate-100 dark:bg-slate-800 p-1 text-xs font-medium">
+                                <button onclick="setChartLimit(24)" id="btnLimit24" class="px-2.5 py-1.5 sm:py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all text-center">24 ล่าสุด</button>
+                                <button onclick="setChartLimit(50)" id="btnLimit50" class="px-2.5 py-1.5 sm:py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all text-center">50 ค่า</button>
+                                <button onclick="setChartLimit(0)" id="btnLimit0" class="px-2.5 py-1.5 sm:py-1 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm transition-all text-center">ทั้งวัน</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Column Mapping Pills -->
+                    <div class="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 mb-3 sm:mb-4 pb-3 border-b border-slate-100 dark:border-slate-800/80 text-xs">
+                        <span class="hidden sm:inline text-slate-400">คอลัมน์ข้อมูล:</span>
+                        <select id="timeColSelect" onchange="recalculateAndRender()" class="w-full sm:w-auto bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-2 sm:py-1 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500 truncate"></select>
+                        <select id="tempColSelect" onchange="recalculateAndRender()" class="w-full sm:w-auto bg-rose-50/60 dark:bg-rose-950/30 border border-rose-200/70 dark:border-rose-800/50 rounded-lg px-2.5 py-2 sm:py-1 text-rose-700 dark:text-rose-300 focus:outline-none focus:ring-2 focus:ring-rose-500 truncate"></select>
+                        <select id="humidColSelect" onchange="recalculateAndRender()" class="w-full sm:w-auto bg-sky-50/60 dark:bg-sky-950/30 border border-sky-200/70 dark:border-sky-800/50 rounded-lg px-2.5 py-2 sm:py-1 text-sky-700 dark:text-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-500 truncate"></select>
+                        <select id="heatColSelect" onchange="recalculateAndRender()" class="w-full sm:w-auto bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/70 dark:border-amber-800/50 rounded-lg px-2.5 py-2 sm:py-1 text-amber-700 dark:text-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-500 truncate"></select>
+                    </div>
+
+                    <!-- Canvas Container -->
+                    <div class="relative flex-grow h-[240px] sm:h-[290px] w-full">
+                        <canvas id="telemetryChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Data Table Section (Latest 100 Rows) -->
+            <div class="bg-white dark:bg-slate-900/90 rounded-2xl sm:rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm overflow-hidden">
+                <div class="p-4 sm:p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+                    <div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <h2 id="tableTitleText" class="text-sm sm:text-base font-bold text-slate-900 dark:text-white">บันทึกข้อมูลเฉพาะวัน — วันนี้</h2>
+                            <span class="px-2 py-0.5 text-[10px] sm:text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-md">ล่าสุดอยู่บนสุด</span>
+                        </div>
+                        <p class="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5" id="tableCountText">แสดง 0 รายการ</p>
+                    </div>
+                    <div class="flex items-center gap-2 w-full sm:w-auto">
+                        <div class="relative flex-grow sm:w-64">
+                            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+                            <input type="text" id="searchInput" oninput="filterTable()" placeholder="ค้นหาเวลา, อุณหภูมิ..." class="w-full pl-9 pr-3 py-2 text-xs sm:text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500">
+                        </div>
+                        <button onclick="exportCSV()" class="min-h-[38px] px-3 py-2 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors flex items-center gap-1.5 shrink-0" title="ดาวน์โหลด CSV">
+                            <i data-lucide="download" class="w-4 h-4"></i>
+                            <span class="hidden sm:inline">ส่งออก CSV</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto max-h-[420px] sm:max-h-[460px]">
+                    <table class="w-full text-left border-collapse">
+                        <thead id="tableHead" class="bg-slate-50/95 dark:bg-slate-800/95 backdrop-blur sticky top-0 z-10 border-b border-slate-200 dark:border-slate-700 text-[11px] sm:text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                            <!-- Dynamic Headers -->
+                        </thead>
+                        <tbody id="tableBody" class="divide-y divide-slate-100 dark:divide-slate-800/80 text-xs sm:text-sm text-slate-700 dark:text-slate-300">
+                            <!-- Dynamic Rows -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Configuration Modal -->
+    <div id="configModal" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+        <div class="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-5">
+            <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                <h3 class="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="link" class="w-5 h-5 text-teal-500"></i>
+                    ตั้งค่าการเชื่อมต่อ Google Sheet
+                </h3>
+                <button onclick="closeConfigModal()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-lg">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Google Sheet URL หรือ Sheet ID</label>
+                    <input type="text" id="sheetUrlInput" class="w-full px-3.5 py-2.5 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="https://docs.google.com/spreadsheets/d/...">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">ชื่อแท็บ (Sheet Name) - *เว้นว่างไว้เพื่อดึงแท็บแรก</label>
+                    <input type="text" id="sheetNameInput" class="w-full px-3.5 py-2.5 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="เช่น Sheet1, DataLog">
+                </div>
+
+                <div class="bg-teal-50/70 dark:bg-teal-950/40 border border-teal-200/80 dark:border-teal-800/60 rounded-2xl p-3.5 text-xs text-teal-800 dark:text-teal-200 space-y-1">
+                    <p class="font-semibold flex items-center gap-1.5">
+                        <i data-lucide="shield-check" class="w-4 h-4 text-teal-600 dark:text-teal-400"></i>
+                        วิธีเปิดสิทธิ์ให้เชื่อมต่ออัตโนมัติ:
+                    </p>
+                    <p>เปิดไฟล์ Google Sheet > กดปุ่ม <strong>แชร์ (Share)</strong> > เลือก <strong>"ทุกคนที่มีลิงก์" (Anyone with the link)</strong></p>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button onclick="closeConfigModal()" class="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors">ยกเลิก</button>
+                <button onclick="saveConfigAndFetch()" class="px-5 py-2 text-sm font-medium text-white bg-teal-600 hover:bg-teal-500 rounded-xl shadow-sm transition-colors">บันทึกและซิงค์ข้อมูล</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Icons
+        lucide.createIcons();
+
+        // Theme Management
+        function initTheme() {
+            const savedTheme = localStorage.getItem('dashboardTheme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+            updateThemeUI();
+        }
+
+        function toggleTheme() {
+            const isDark = document.documentElement.classList.toggle('dark');
+            localStorage.setItem('dashboardTheme', isDark ? 'dark' : 'light');
+            updateThemeUI();
+            if (rawData.length > 0) {
+                renderTelemetryChart();
+            }
+        }
+
+        function updateThemeUI() {
+            const isDark = document.documentElement.classList.contains('dark');
+            const icon = document.getElementById('themeIcon');
+            const text = document.getElementById('themeText');
+            if (icon && text) {
+                icon.setAttribute('data-lucide', isDark ? 'sun' : 'moon');
+                text.textContent = isDark ? 'โหมดกลางวัน' : 'โหมดกลางคืน';
+                lucide.createIcons();
+            }
+        }
+
+        // Default Sheet Configuration
+        let config = {
+            sheetUrl: 'https://docs.google.com/spreadsheets/d/114bLkR5cUBklODMHCA0M934cxzsVJEWZ5VdEPn1F9mg/edit?usp=sharing',
+            sheetId: '114bLkR5cUBklODMHCA0M934cxzsVJEWZ5VdEPn1F9mg',
+            sheetName: ''
+        };
+
+        // State
+        let dailyBuckets = {}; // Isolated rows grouped strictly by YYYY-MM-DD (full day)
+        let referenceLatestDate = null; // Latest calendar date found in the sheet (or today)
+        let rawData = [];
+        let filteredData = [];
+        let headers = [];
+        let chartLimit = 0; // 0 = ทั้งวัน (All records for the selected day)
+        let selectedDayOffset = 0; // 0 = วันนี้, 1 = เมื่อวาน, 2 = 2 วันก่อน, 3 = 3 วันก่อน
+        let telemetryChartInstance = null;
+
+        // Helper: Extract Sheet ID from URL
+        function extractSheetId(input) {
+            const match = input.match(/\/d\/([a-zA-Z0-9-_]+)/);
+            return match ? match[1] : input.trim();
+        }
+
+        // Helper: Parse Thai/ISO Date strings safely into a Date object
+        function parseRowDate(str) {
+            if (!str) return null;
+            const s = String(str).trim();
+            // Match DD/MM/YYYY or D/M/YYYY (with optional time)
+            const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+            if (dmy) {
+                const day = parseInt(dmy[1], 10);
+                const month = parseInt(dmy[2], 10) - 1;
+                let year = parseInt(dmy[3], 10);
+                if (year > 2400) year -= 543; // Handle Buddhist Era (พ.ศ.)
+                const d = new Date(year, month, day);
+                if (!isNaN(d.getTime())) return d;
+            }
+            // Match YYYY-MM-DD or YYYY/MM/DD
+            const ymd = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+            if (ymd) {
+                let year = parseInt(ymd[1], 10);
+                if (year > 2400) year -= 543;
+                const month = parseInt(ymd[2], 10) - 1;
+                const day = parseInt(ymd[3], 10);
+                const d = new Date(year, month, day);
+                if (!isNaN(d.getTime())) return d;
+            }
+            const parsed = new Date(s);
+            return isNaN(parsed.getTime()) ? null : parsed;
+        }
+
+        // Helper: Format Date as YYYY-MM-DD local key
+        function formatDateKey(dateObj) {
+            if (!dateObj || isNaN(dateObj.getTime())) return null;
+            const y = dateObj.getFullYear();
+            const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const d = String(dateObj.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+
+        // Helper: Format Date for Thai UI display
+        function formatThaiDate(dateObj) {
+            if (!dateObj || isNaN(dateObj.getTime())) return '';
+            return dateObj.toLocaleDateString('th-TH', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric'
+            });
+        }
+
+        // Helper: Parse numeric cell safely
+        function parseNum(val) {
+            if (val === null || val === undefined || val === '') return NaN;
+            const cleaned = String(val).replace(/[^0-9.-]+/g, '');
+            return parseFloat(cleaned);
+        }
+
+        // Helper: NOAA Heat Index formula (°C)
+        function calcHeatIndex(tempC, rh) {
+            if (isNaN(tempC) || isNaN(rh)) return NaN;
+            if (tempC < 27) return tempC;
+            const T = (tempC * 9 / 5) + 32;
+            const R = rh;
+            let HI = -42.379 + 2.04901523 * T + 10.14333127 * R
+                - 0.22475541 * T * R - 0.00683783 * T * T
+                - 0.05481717 * R * R + 0.00122874 * T * T * R
+                + 0.00085282 * T * R * R - 0.00000199 * T * T * R * R;
+            return (HI - 32) * 5 / 9;
+        }
+
+        // Status Banner Utility
+        function showBanner(type, message) {
+            const banner = document.getElementById('statusBanner');
+            if (!message) {
+                banner.classList.add('hidden');
+                return;
+            }
+            banner.classList.remove('hidden');
+            if (type === 'error') {
+                banner.className = 'rounded-2xl p-4 border shadow-sm transition-all bg-rose-50 dark:bg-rose-950/50 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-200 text-xs sm:text-sm flex items-center gap-2.5';
+                banner.innerHTML = `<i data-lucide="alert-circle" class="w-5 h-5 shrink-0 text-rose-500"></i><span>${message}</span>`;
+            } else {
+                banner.className = 'rounded-2xl p-4 border shadow-sm transition-all bg-teal-50 dark:bg-teal-950/50 border-teal-200 dark:border-teal-800 text-teal-700 dark:text-teal-200 text-xs sm:text-sm flex items-center gap-2.5';
+                banner.innerHTML = `<i data-lucide="check-circle-2" class="w-5 h-5 shrink-0 text-teal-500"></i><span>${message}</span>`;
+            }
+            lucide.createIcons();
+        }
+
+        // Fetch CSV from Google Sheets
+        function fetchSheetData() {
+            const refreshIcon = document.getElementById('refreshIcon');
+            if (refreshIcon) refreshIcon.classList.add('animate-spin');
+            showBanner(null, '');
+
+            const sheetQuery = config.sheetName ? `&sheet=${encodeURIComponent(config.sheetName)}` : '';
+            const csvUrl = `https://docs.google.com/spreadsheets/d/${config.sheetId}/gviz/tq?tqx=out:csv${sheetQuery}&_=${Date.now()}`;
+
+            Papa.parse(csvUrl, {
+                download: true,
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    if (refreshIcon) refreshIcon.classList.remove('animate-spin');
+                    if (!results.data || results.data.length === 0) {
+                        showBanner('error', 'ไม่พบข้อมูลใน Google Sheet หรือไฟล์ยังไม่ได้เปิดสิทธิ์แชร์เป็น "ทุกคนที่มีลิงก์"');
+                        document.getElementById('loadingState').classList.add('hidden');
+                        return;
+                    }
+                    processData(results.data, results.meta.fields || Object.keys(results.data[0]));
+                },
+                error: function(err) {
+                    if (refreshIcon) refreshIcon.classList.remove('animate-spin');
+                    showBanner('error', 'ไม่สามารถเชื่อมต่อ Google Sheet ได้ กรุณาตรวจสอบลิงก์และการตั้งค่าแชร์ไฟล์');
+                    document.getElementById('loadingState').classList.add('hidden');
+                }
+            });
+        }
+
+        // Process and Group Rows Strictly by Calendar Day
+        function processData(rows, fields) {
+            headers = fields.filter(h => h && h.trim() !== '');
+            const cleanRows = rows.filter(r => headers.some(h => r[h] !== undefined && String(r[h]).trim() !== ''));
+
+            if (cleanRows.length === 0) {
+                showBanner('error', 'ไม่พบแถวข้อมูลที่ใช้งานได้ในชีตนี้');
+                return;
+            }
+
+            // Auto-detect columns
+            const timeCol = headers.find(h => /time|date|stamp|เวลา|วันที่/i.test(h)) || headers[0];
+            const tempCol = headers.find(h => /temp|อุณหภูมิ|°c/i.test(h)) || headers[1] || headers[0];
+            const humidCol = headers.find(h => /humid|ความชื้น|rh|%/i.test(h)) || headers[2] || headers[1] || headers[0];
+            const heatCol = headers.find(h => /heat|feels|ดัชนี/i.test(h)) || '__AUTO__';
+
+            populateDropdown('timeColSelect', headers, timeCol, 'เวลา');
+            populateDropdown('tempColSelect', headers, tempCol, 'อุณหภูมิ');
+            populateDropdown('humidColSelect', headers, humidCol, 'ความชื้น');
+            populateDropdown('heatColSelect', ['__AUTO__', ...headers], heatCol, 'ดัชนีความร้อน');
+
+            // Group rows strictly into individual calendar days (all rows for each day)
+            dailyBuckets = {};
+            let maxDateObj = null;
+
+            cleanRows.forEach(r => {
+                const dObj = parseRowDate(r[timeCol]);
+                const key = formatDateKey(dObj) || 'NO_DATE';
+                if (!dailyBuckets[key]) dailyBuckets[key] = [];
+                dailyBuckets[key].push(r);
+                if (dObj && (!maxDateObj || dObj > maxDateObj)) {
+                    maxDateObj = dObj;
+                }
+            });
+
+            referenceLatestDate = maxDateObj || new Date();
+
+            setDayOffset(selectedDayOffset);
+
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('dashboardContent').classList.remove('hidden');
+        }
+
+        // Switch Day (0 = Today, 1 = Yesterday, 2 = 2 Days Ago, 3 = 3 Days Ago)
+        function setDayOffset(offset) {
+            selectedDayOffset = offset;
+            const dayLabels = ['วันนี้', 'เมื่อวาน', '2 วันก่อน', '3 วันก่อน'];
+
+            [0, 1, 2, 3].forEach(d => {
+                const btn = document.getElementById(`btnDay${d}`);
+                if (!btn) return;
+                if (d === offset) {
+                    btn.className = 'px-2 sm:px-2.5 py-1.5 sm:py-1 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm transition-all text-center truncate';
+                } else {
+                    btn.className = 'px-2 sm:px-2.5 py-1.5 sm:py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all text-center truncate';
+                }
+            });
+
+            const targetDate = new Date(referenceLatestDate.getTime());
+            targetDate.setDate(targetDate.getDate() - offset);
+            const targetKey = formatDateKey(targetDate);
+            const thaiDateStr = formatThaiDate(targetDate);
+
+            document.getElementById('chartTitleText').textContent = `แนวโน้มสภาพอากาศ — ${dayLabels[offset]} (${thaiDateStr})`;
+            document.getElementById('tableTitleText').textContent = `บันทึกข้อมูลเฉพาะวัน — ${dayLabels[offset]} (${thaiDateStr})`;
+
+            if (dailyBuckets[targetKey]) {
+                rawData = [...dailyBuckets[targetKey]];
+            } else if (dailyBuckets['NO_DATE'] && selectedDayOffset === 0) {
+                rawData = [...dailyBuckets['NO_DATE']];
+            } else {
+                rawData = [];
+            }
+
+            document.getElementById('searchInput').value = '';
+            filteredData = [...rawData].reverse();
+
+            recalculateAndRender();
+            renderTable();
+        }
+
+        function populateDropdown(elementId, options, selectedVal, prefixLabel) {
+            const select = document.getElementById(elementId);
+            select.innerHTML = options.map(opt => {
+                const label = opt === '__AUTO__' ? `${prefixLabel}: คำนวณอัตโนมัติ` : `${prefixLabel}: ${opt}`;
+                return `<option value="${opt}" ${opt === selectedVal ? 'selected' : ''}>${label}</option>`;
+            }).join('');
+        }
+
+        function setChartLimit(limit) {
+            chartLimit = limit;
+            [24, 50, 0].forEach(l => {
+                const btn = document.getElementById(`btnLimit${l}`);
+                if (!btn) return;
+                if (l === limit) {
+                    btn.className = 'px-2.5 py-1.5 sm:py-1 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm transition-all text-center';
+                } else {
+                    btn.className = 'px-2.5 py-1.5 sm:py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all text-center';
+                }
+            });
+            renderTelemetryChart();
+        }
+
+        // Recalculate KPI Sensor Cards and Render Chart
+        function recalculateAndRender() {
+            const timeCol = document.getElementById('timeColSelect').value;
+            const tempCol = document.getElementById('tempColSelect').value;
+            const humidCol = document.getElementById('humidColSelect').value;
+            const heatCol = document.getElementById('heatColSelect').value;
+
+            if (rawData.length === 0) {
+                document.getElementById('valTemp').textContent = '--.-';
+                document.getElementById('valHumid').textContent = '--.-';
+                document.getElementById('valHeat').textContent = '--';
+                document.getElementById('rangeTemp').textContent = 'Min -- / Max --';
+                document.getElementById('rangeHumid').textContent = 'Min -- / Max --';
+                document.getElementById('lastSyncTime').innerHTML = '<i data-lucide="clock" class="w-3 h-3"></i> ไม่มีข้อมูล';
+                lucide.createIcons();
+                renderTelemetryChart();
+                return;
+            }
+
+            const temps = rawData.map(r => parseNum(r[tempCol])).filter(v => !isNaN(v));
+            const humids = rawData.map(r => parseNum(r[humidCol])).filter(v => !isNaN(v));
+
+            const latestRow = rawData[rawData.length - 1];
+            const latestTemp = parseNum(latestRow[tempCol]);
+            const latestHumid = parseNum(latestRow[humidCol]);
+            const latestHeat = heatCol === '__AUTO__'
+                ? calcHeatIndex(latestTemp, latestHumid)
+                : parseNum(latestRow[heatCol]);
+
+            // Update Temperature Card
+            if (!isNaN(latestTemp)) {
+                document.getElementById('valTemp').textContent = latestTemp.toFixed(1);
+                const minT = Math.min(...temps).toFixed(1);
+                const maxT = Math.max(...temps).toFixed(1);
+                document.getElementById('rangeTemp').textContent = `Min ${minT}° / Max ${maxT}°`;
+                const pctT = Math.min(100, Math.max(5, ((latestTemp - 15) / 30) * 100));
+                document.getElementById('barTemp').style.width = `${pctT}%`;
+                document.getElementById('badgeTemp').textContent = latestTemp > 32 ? 'ร้อน' : latestTemp < 22 ? 'เย็น' : 'ปกติ';
+            }
+
+            // Update Humidity Card
+            if (!isNaN(latestHumid)) {
+                document.getElementById('valHumid').textContent = latestHumid.toFixed(1);
+                const minH = Math.min(...humids).toFixed(0);
+                const maxH = Math.max(...humids).toFixed(0);
+                document.getElementById('rangeHumid').textContent = `Min ${minH}% / Max ${maxH}%`;
+                const pctH = Math.min(100, Math.max(5, latestHumid));
+                document.getElementById('barHumid').style.width = `${pctH}%`;
+                document.getElementById('badgeHumid').textContent = latestHumid > 75 ? 'ชื้นสูง' : latestHumid < 40 ? 'อากาศแห้ง' : 'เหมาะสม';
+            }
+
+            // Update Heat Index Card
+            if (!isNaN(latestHeat)) {
+                document.getElementById('valHeat').textContent = Math.round(latestHeat);
+                const pctHI = Math.min(100, Math.max(5, ((latestHeat - 20) / 30) * 100));
+                document.getElementById('barHeat').style.width = `${pctHI}%`;
+                document.getElementById('badgeHeat').textContent = latestHeat >= 35 ? 'ร้อนจัด' : latestHeat >= 30 ? 'อบอ้าว' : 'สบายตัว';
+            }
+
+            const rawTime = String(latestRow[timeCol] || '');
+            const shortTime = rawTime.includes(' ') ? rawTime.split(' ').pop().slice(0, 5) : rawTime;
+            document.getElementById('lastSyncTime').innerHTML = `<i data-lucide="clock" class="w-3 h-3"></i> ${shortTime || '--:--'}`;
+            lucide.createIcons();
+
+            renderTelemetryChart();
+        }
+
+        // Render Dual-Axis Telemetry Chart
+        function renderTelemetryChart() {
+            const canvas = document.getElementById('telemetryChart');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+
+            if (telemetryChartInstance) {
+                telemetryChartInstance.destroy();
+            }
+
+            const timeCol = document.getElementById('timeColSelect').value;
+            const tempCol = document.getElementById('tempColSelect').value;
+            const humidCol = document.getElementById('humidColSelect').value;
+
+            const isDark = document.documentElement.classList.contains('dark');
+            const isMobile = window.innerWidth < 640;
+            const textColor = isDark ? '#94a3b8' : '#64748b';
+            const gridColor = isDark ? 'rgba(51, 65, 85, 0.35)' : 'rgba(226, 232, 240, 0.75)';
+
+            const sliceData = chartLimit === 0 ? rawData : rawData.slice(-chartLimit);
+            const labels = sliceData.map(r => {
+                const val = String(r[timeCol] || '');
+                return val.includes(' ') ? val.split(' ').pop().slice(0, 5) : val;
+            });
+
+            const tempData = sliceData.map(r => {
+                const v = parseNum(r[tempCol]);
+                return isNaN(v) ? null : Number(v.toFixed(1));
+            });
+
+            const humidData = sliceData.map(r => {
+                const v = parseNum(r[humidCol]);
+                return isNaN(v) ? null : Number(v.toFixed(1));
+            });
+
+            const tempGrad = ctx.createLinearGradient(0, 0, 0, 280);
+            tempGrad.addColorStop(0, 'rgba(244, 63, 94, 0.28)');
+            tempGrad.addColorStop(1, 'rgba(244, 63, 94, 0.0)');
+
+            const humidGrad = ctx.createLinearGradient(0, 0, 0, 280);
+            humidGrad.addColorStop(0, 'rgba(14, 165, 233, 0.25)');
+            humidGrad.addColorStop(1, 'rgba(14, 165, 233, 0.0)');
+
+            telemetryChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'อุณหภูมิ (°C)',
+                            data: tempData,
+                            yAxisID: 'yTemp',
+                            borderColor: '#f43f5e',
+                            backgroundColor: tempGrad,
+                            borderWidth: 2.5,
+                            fill: true,
+                            tension: 0.35,
+                            pointRadius: sliceData.length > 60 ? 0 : 2.5,
+                            pointHoverRadius: 5,
+                            pointBackgroundColor: '#f43f5e'
+                        },
+                        {
+                            label: 'ความชื้น (%)',
+                            data: humidData,
+                            yAxisID: 'yHumid',
+                            borderColor: '#0ea5e9',
+                            backgroundColor: humidGrad,
+                            borderWidth: 2.5,
+                            fill: true,
+                            tension: 0.35,
+                            pointRadius: sliceData.length > 60 ? 0 : 2.5,
+                            pointHoverRadius: 5,
+                            pointBackgroundColor: '#0ea5e9'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            align: 'end',
+                            labels: {
+                                color: textColor,
+                                usePointStyle: true,
+                                boxWidth: 8,
+                                font: { family: 'Prompt, Inter, sans-serif', size: isMobile ? 11 : 12 }
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+                            titleColor: isDark ? '#f8fafc' : '#0f172a',
+                            bodyColor: isDark ? '#cbd5e1' : '#334155',
+                            borderColor: isDark ? '#334155' : '#e2e8f0',
+                            borderWidth: 1,
+                            padding: 10,
+                            cornerRadius: 12,
+                            callbacks: {
+                                label: function(context) {
+                                    const val = context.parsed.y;
+                                    if (val === null || val === undefined) return '';
+                                    const unit = context.dataset.yAxisID === 'yTemp' ? ' °C' : ' %';
+                                    return `${context.dataset.label}: ${Number(val).toFixed(1)}${unit}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: {
+                                color: textColor,
+                                maxTicksLimit: isMobile ? 6 : 12,
+                                font: { size: isMobile ? 10 : 11 }
+                            }
+                        },
+                        yTemp: {
+                            type: 'linear',
+                            position: 'left',
+                            grid: { color: gridColor },
+                            title: {
+                                display: !isMobile,
+                                text: 'อุณหภูมิ (°C)',
+                                color: '#f43f5e',
+                                font: { family: 'Prompt, Inter, sans-serif', size: 11, weight: '600' }
+                            },
+                            ticks: {
+                                color: '#f43f5e',
+                                font: { size: isMobile ? 10 : 11 },
+                                callback: function(value) {
+                                    return Number(value).toFixed(1);
+                                }
+                            }
+                        },
+                        yHumid: {
+                            type: 'linear',
+                            position: 'right',
+                            grid: { drawOnChartArea: false },
+                            title: {
+                                display: !isMobile,
+                                text: 'ความชื้น (%)',
+                                color: '#0ea5e9',
+                                font: { family: 'Prompt, Inter, sans-serif', size: 11, weight: '600' }
+                            },
+                            ticks: {
+                                color: '#0ea5e9',
+                                font: { size: isMobile ? 10 : 11 },
+                                callback: function(value) {
+                                    return Number(value).toFixed(1);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Filter Table by Search Query
+        function filterTable() {
+            const q = document.getElementById('searchInput').value.trim().toLowerCase();
+            const reversedFull = [...rawData].reverse();
+            if (!q) {
+                filteredData = reversedFull;
+            } else {
+                filteredData = reversedFull.filter(row =>
+                    headers.some(h => String(row[h] || '').toLowerCase().includes(q))
+                );
+            }
+            renderTable();
+        }
+
+        // Render Data Table (Newest First, Full Day)
+        function renderTable() {
+            const thead = document.getElementById('tableHead');
+            const tbody = document.getElementById('tableBody');
+
+            thead.innerHTML = `
+                <tr>
+                    <th class="px-3 sm:px-5 py-3 sm:py-3.5 w-12 sm:w-16 text-center whitespace-nowrap">ล่าสุด #</th>
+                    ${headers.map(h => `<th class="px-3 sm:px-5 py-3 sm:py-3.5 whitespace-nowrap">${h}</th>`).join('')}
+                </tr>
+            `;
+
+            const displayRows = filteredData;
+            document.getElementById('tableCountText').textContent = `แสดงทั้งหมด ${displayRows.length} รายการของวันนี้`;
+
+            if (displayRows.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="${headers.length + 1}" class="px-6 py-10 text-center text-slate-400">
+                            ไม่พบข้อมูลในวันที่เลือก
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = displayRows.map((row, idx) => `
+                <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
+                    <td class="px-3 sm:px-5 py-2.5 sm:py-3 text-center font-medium text-slate-400 text-xs">${idx + 1}</td>
+                    ${headers.map(h => `<td class="px-3 sm:px-5 py-2.5 sm:py-3 whitespace-nowrap">${row[h] !== undefined ? row[h] : '-'}</td>`).join('')}
+                </tr>
+            `).join('');
+        }
+
+        function exportCSV() {
+            if (filteredData.length === 0) return;
+            const exportRows = filteredData.map(r => {
+                const clean = {};
+                headers.forEach(h => clean[h] = r[h]);
+                return clean;
+            });
+            const csv = Papa.unparse(exportRows);
+            const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `smart_classroom_fullday_${new Date().toISOString().slice(0,10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // Modal Handlers
+        function openConfigModal() {
+            document.getElementById('sheetUrlInput').value = config.sheetUrl;
+            document.getElementById('sheetNameInput').value = config.sheetName;
+            const modal = document.getElementById('configModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeConfigModal() {
+            const modal = document.getElementById('configModal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        function saveConfigAndFetch() {
+            const urlVal = document.getElementById('sheetUrlInput').value.trim();
+            const nameVal = document.getElementById('sheetNameInput').value.trim();
+            if (urlVal) {
+                config.sheetUrl = urlVal;
+                config.sheetId = extractSheetId(urlVal);
+            }
+            config.sheetName = nameVal;
+            closeConfigModal();
+            fetchSheetData();
+        }
+
+        // Re-render chart smoothly on window resize / orientation change
+        let resizeTimer;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                if (rawData.length > 0) renderTelemetryChart();
+            }, 200);
+        });
+
+        // Boot
+        window.addEventListener('DOMContentLoaded', () => {
+            initTheme();
+            fetchSheetData();
+        });
+    </script>
+</body>
+</html>
